@@ -1,160 +1,83 @@
-import os
-import asyncio
-import nest_asyncio
-import requests
 from flask import Flask, request
+from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
+    Application, CommandHandler, ContextTypes, ConversationHandler,
+    CallbackQueryHandler, MessageHandler, filters
 )
+import requests
+import os
+import nest_asyncio
+import asyncio
 
-# ==== إعدادات البوت ====
-TOKEN = os.environ.get("BOT_TOKEN")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-
-CHOOSING, TYPING_CONFESSION, AFTER_CONFESSION, CHOOSING_EXERCISE, TYPING_EXERCISE = range(5)
-confessions_storage = []
-
-GOOGLE_SHEET_URL = "https://script.google.com/macros/s/XXX/exec"  # عدّليه عند الحاجة
-
-# ==== إعداد واجهة الويب (Webhook) ====
+# --- Flask App ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "✅ البوت يعمل الآن…"
 
-@app.route(f"/{TOKEN}", methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.create_task(application.process_update(update))
-    return 'ok'
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        asyncio.run(application.process_update(update))
+        return 'ok'
 
-# ==== وظائف البوت ====
-async def send_to_sheet(entry_type, content):
-    try:
-        requests.post(GOOGLE_SHEET_URL, json={
-            "type": entry_type,
-            "content": content,
-            "source": "Telegram Bot"
-        })
-    except Exception as e:
-        print("Error sending to sheet:", e)
+# --- Keep alive on Render ---
+def keep_alive():
+    port = int(os.environ.get("PORT", 8080))
+    t = Thread(target=lambda: app.run(host='0.0.0.0', port=port))
+    t.start()
 
-WELCOME_TEXT = """
-🖤 مرحبًا في بلاك دفتر
+# --- States ---
+CHOOSING, TYPING_CONFESSION, AFTER_CONFESSION, CHOOSING_EXERCISE, TYPING_EXERCISE = range(5)
 
-✦ اختاري ما ترغبين به من هذه المساحة الآن:
-"""
+# --- Static texts and buttons (اختصري هنا لو أردتِ) ---
+WELCOME_TEXT = "مرحبا"
+MAIN_MENU_KEYBOARD = [[InlineKeyboardButton("ابدئي", callback_data='start')]]
+BACK_TO_MENU = InlineKeyboardButton("⬅️ العودة", callback_data='main_menu')
 
-MAIN_MENU = [
-    [InlineKeyboardButton("✍️ اعتراف", callback_data='confess')],
-    [InlineKeyboardButton("📚 المكتبة", callback_data='library')],
-]
-
-BACK = [InlineKeyboardButton("⬅️ العودة", callback_data='main_menu')]
-
-CONFESSION_PROMPT = "🖤 اكتبي اعترافك الآن…"
-POST_CONFESSION = "🖤 هل ترغبين في تمرين بعد هذا الاعتراف؟"
-
-POST_OPTIONS = [
-    [InlineKeyboardButton("🎯 نعم", callback_data='exercise')],
-    [InlineKeyboardButton("🔙 لا", callback_data='main_menu')],
-]
-
-LIBRARY_TEXT = """
-📘 مكتبة بلاك دفتر
-
-🔪 دفترها الأسود – سكين أبي  
-🖇️ [رابط المنتج](https://tinyurl.com/fatherscar)
-
-👻 أشباح الذاكرة لا تموت  
-🖇️ [رابط المنتج](https://tinyurl.com/goastmmry)
-"""
-
-EXERCISES_TEXT = """
-🎭 اختاري التمرين المناسب لوجعك:
-"""
-EXERCISE_OPTIONS = [
-    [InlineKeyboardButton("🎀 طفولة", callback_data='child')],
-    [InlineKeyboardButton("💔 علاقات", callback_data='love')],
-    [InlineKeyboardButton("⚔️ معارك داخلية", callback_data='war')],
-    BACK
-]
-
-EXERCISE_RESPONSES = {
-    'child': "🎀 تخيّلي طفلتك أمامك… ماذا تهمسين لها؟",
-    'love': "💔 اكتبي اعترافك المرآوي: ما الذي تريدين تغييره في نفسك؟",
-    'war': "⚔️ اكتبي كل ما تحاربينه داخلك… ثم تنفّسي."
-}
-
-# ==== Handlers ====
+# --- Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_TEXT, reply_markup=InlineKeyboardMarkup(MAIN_MENU))
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD))
     return CHOOSING
 
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(WELCOME_TEXT, reply_markup=InlineKeyboardMarkup(MAIN_MENU))
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(WELCOME_TEXT, reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD))
     return CHOOSING
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    if q.data == 'confess':
-        await q.edit_message_text(CONFESSION_PROMPT)
-        return TYPING_CONFESSION
-    elif q.data == 'main_menu':
-        return await main_menu(update, context)
-    elif q.data == 'library':
-        await q.edit_message_text(LIBRARY_TEXT, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup([BACK]))
-        return CHOOSING
-    elif q.data == 'exercise':
-        await q.edit_message_text(EXERCISES_TEXT, reply_markup=InlineKeyboardMarkup(EXERCISE_OPTIONS))
-        return CHOOSING_EXERCISE
-    elif q.data in EXERCISE_RESPONSES:
-        await q.edit_message_text(EXERCISE_RESPONSES[q.data], reply_markup=InlineKeyboardMarkup([BACK]))
-        return TYPING_EXERCISE
+    return await main_menu(update, context)
 
-async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message.text.strip()
-    await send_to_sheet("اعتراف", msg)
-    await update.message.reply_text(POST_CONFESSION, reply_markup=InlineKeyboardMarkup(POST_OPTIONS))
-    return AFTER_CONFESSION
+# --- Setup Bot ---
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    print("❗ BOT_TOKEN غير موجود")
+    exit()
 
-async def handle_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message.text.strip()
-    await send_to_sheet("تمرين", msg)
-    await update.message.reply_text("✅ تم حفظ تمرينك.", reply_markup=InlineKeyboardMarkup([BACK]))
-    return CHOOSING
-
-# ==== تشغيل البوت ====
-nest_asyncio.apply()
 application = Application.builder().token(TOKEN).build()
 
 conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
+    entry_points=[CommandHandler('start', start)],
     states={
         CHOOSING: [CallbackQueryHandler(button_handler)],
-        TYPING_CONFESSION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_confession)],
-        AFTER_CONFESSION: [CallbackQueryHandler(button_handler)],
-        CHOOSING_EXERCISE: [CallbackQueryHandler(button_handler)],
-        TYPING_EXERCISE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_exercise)],
     },
-    fallbacks=[CommandHandler("start", start)],
+    fallbacks=[CommandHandler('start', start)],
 )
+
 application.add_handler(conv_handler)
 
-# Webhook
-async def run_bot():
-    await application.initialize()
-    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
-    await application.start()
-    await application.updater.start_polling()
-    print("✅ البوت يعمل الآن...")
+# --- Webhook setup ---
+async def set_webhook():
+    url = os.environ.get("RENDER_EXTERNAL_URL") or "https://black-daftar-bot.onrender.com"
+    webhook_url = f"{url}/webhook"
+    await application.bot.set_webhook(webhook_url)
 
-asyncio.get_event_loop().create_task(run_bot())
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+# --- Main Execution ---
+if __name__ == '__main__':
+    nest_asyncio.apply()
+    keep_alive()
+    asyncio.run(set_webhook())
