@@ -1,28 +1,46 @@
 import os
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from flask import Flask
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import nest_asyncio
 
+nest_asyncio.apply()
+
+# استدعاء التوكن والرابط من متغيرات البيئة
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_URL = os.environ.get("BOT_URL")
+
+if not BOT_TOKEN or not BOT_URL:
+    print("❗ BOT_TOKEN أو BOT_URL غير موجودين")
+    exit()
+
+bot = Bot(token=BOT_TOKEN)
 app = Flask(__name__)
-TOKEN = os.environ.get('TOKEN')
+application = ApplicationBuilder().token(BOT_TOKEN).build()
 
+
+# أمر /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("مرحبًا بك في دفتر الاعترافات 🖤")
+
+
+application.add_handler(CommandHandler("start", start))
+
+
+# إعداد webhook على تيليغرام
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    application.update_queue.put_nowait(update)
+    return "ok"
+
+
+# ربط البوت بالرابط الخاص
 @app.route('/')
-def home():
-    return "Bot is alive!"
+def index():
+    bot.set_webhook(url=f"{BOT_URL}/webhook")
+    return "✅ Webhook set successfully"
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text('✅ البوت يعمل! أرسل أي رسالة')
-
-def echo(update: Update, context: CallbackContext):
-    update.message.reply_text(f'📢: {update.message.text}')
-
-def main():
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
-    updater.start_polling()
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 if __name__ == '__main__':
-    main()
+    app.run(port=10000)
