@@ -1,7 +1,6 @@
-const { Telegraf, Markup } = require('telegraf');
-const axios = require('axios');
+const { Telegraf } = require('telegraf');
 const express = require('express');
-const app = express();
+const axios = require('axios');
 
 // -------- إعداد Keep Alive --------
 app.get('/', (req, res) => {
