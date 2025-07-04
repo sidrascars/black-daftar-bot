@@ -1,110 +1,164 @@
-const { Telegraf } = require('telegraf');
-const express = require('express');
-const axios = require('axios');
+// main.js
+import { Telegraf, Markup } from 'telegraf';
+import express from 'express';
+import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+dotenv.config();
 
-// -------- إعداد Keep Alive --------
-app.get('/', (req, res) => {
-  res.send('✅ البوت يعمل الآن…');
-});
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
-app.listen(8080, () => {
-  console.log('🌐 السيرفر يعمل على المنفذ 8080');
-});
+// -------- KEEP ALIVE --------
+const app = express();
+app.get('/', (_req, res) => res.send('✅ البوت يعمل الآن…'));
+app.listen(8080, () => console.log('✅ السيرفر يعمل على المنفذ 8080'));
 
-// -------- إعداد التوكن والبوت --------
-const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) throw new Error('❗ BOT_TOKEN غير موجود في environment variables');
+// -------- BOT STATES --------
+const STATE = {
+  CHOOSING: 'CHOOSING',
+  CONFESSION: 'CONFESSION',
+  EXERCISE: 'EXERCISE'
+};
 
-const bot = new Telegraf(BOT_TOKEN);
+const confessionsStorage = [];
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbyMmr-a_dDJtbGm3ZZ3x1yDPi3arGghpU9jLh1ZqYe8Pnbj4CTxKtPY3rZp9MaYOoCP1w/exec";
 
-// -------- البيانات --------
-const confessions_storage = [];
-const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbyMmr-a_dDJtbGm3ZZ3x1yDPi3arGghpU9jLh1ZqYe8Pnbj4CTxKtPY3rZp9MaYOoCP1w/exec';
+const userStates = new Map();
 
-const sendToSheet = async (type, content, source = 'Telegram Bot') => {
+async function sendToSheet(entryType, content, source = 'Telegram Bot') {
   try {
-    await axios.post(GOOGLE_SHEET_URL, { type, content, source });
+    await fetch(GOOGLE_SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: entryType, content, source })
+    });
   } catch (e) {
-    console.error('Google Sheet Error:', e);
+    console.error("Google Sheet Error:", e);
   }
+}
+
+// -------- TEXT CONTENT --------
+const TEXT = {
+  welcome: `🖤 مرحبًا في بلاك دفتر
+البوت الرسمي لقناة دفترها الأسود…
+
+لا حاجة لشرح ما لا يُفهم.
+هنا نُرسل ما لم يُقال، ونطلب ما لم نجرؤ عليه.
+🖤 في هذا المكان، لا أسماء ولا تواريخ… فقط نساء يُخرجن كلمات دفنتها الحروب، أو الحب، أو الخوف.
+
+✦ اختاري ما ترغبين به من هذه المساحة الآن:`,
+
+  blackBook: `🖤 دفترها الأسود ليس مجرد دفتر… إنه ركن صغير وملجأ حميم لأصوات لم يُسمح لها أن تبكي.
+
+نكتب هنا عن نساء لم يُنقذهن أحد، عشن الطفولة وكأنها تهمة، والحب جرح.`,
+
+  confessionPrompt: `🖤 لا أحد سيعرفكِ هنا… اكتبي كما لو أنكِ تهمسين لقلبكِ، لا أحد سيحكم، لا أحد سيقاطع.
+
+📩 حين تنتهين، فقط أرسلي النص.`,
+
+  postConfession: `🖤 كلماتكِ وصلت، وسنحتفظ بها كما تُحفظ الندبة…
+
+هل ترغبين في تمرين بعد هذا الاعتراف؟`,
+
+  exercisesList: `🩻 اختاري التمرين الذي يناسب وجعكِ الآن:`,
+
+  exerciseEnd: `🖤 التمرين انتهى… لكن ما بداخلكِ لم ينتهِ، فقط بدأ يتنفّس.
+
+ضعي يدكِ على صدرك، وقولي لنفسكِ:
+"أنا أكتب كي أتنفس."`,
+
+  library: `📘 مكتبة بلاك دفتر
+منتجات علاجية كُتبت من الجرح… لا للقراءة، بل للنجاة.
+
+📖 أشباح الذاكرة لا تموت
+🖇️ https://tinyurl.com/goastmmry
+
+🔪 دفترها الأسود – سكين أبي
+🖇️ https://tinyurl.com/fatherscar`
 };
 
-const texts = {
-  welcome: `🖤 مرحبًا في بلاك دفتر...\n✦ اختاري ما ترغبين به من هذه المساحة الآن:`,
-  black_book: `🖤 دفترها الأسود ليس مجرد دفتر…\nإنه ركن صغير وملجأ حميم لأصوات لم يُسمح لها أن تبكي.`,
-  confession_prompt: `🖤 لا أحد سيعرفكِ هنا…\n📩 حين تنتهين، فقط أرسلي النص.`,
-  after_confession: `🖤 كلماتكِ وصلت...\nهل ترغبين في تمرين بعد هذا الاعتراف؟`,
-  exercises_intro: `🩻 اختاري التمرين الذي يناسب وجعكِ الآن:`,
-  exercise_end: `🖤 التمرين انتهى…\n"أنا أكتب كي أتنفس."`,
-  library: `📘 مكتبة بلاك دفتر\n📖 أشباح الذاكرة لا تموت: https://tinyurl.com/goastmmry\n🔪 دفترها الأسود – سكين أبي: https://tinyurl.com/fatherscar`
+const KEYBOARDS = {
+  main: Markup.inlineKeyboard([
+    [Markup.button.callback("دفترها الأسود", 'black_book')],
+    [Markup.button.callback("اعتراف", 'confess')],
+    [Markup.button.callback("التمارين", 'exercises')],
+    [Markup.button.callback("المكتبة", 'library')],
+  ]),
+  back: Markup.inlineKeyboard([
+    [Markup.button.callback("⬅️ العودة إلى القائمة الرئيسية", 'main')]
+  ]),
+  postConfession: Markup.inlineKeyboard([
+    [Markup.button.callback("نعم، أرغب بتمرين", 'exercises')],
+    [Markup.button.callback("لا، أعِدني إلى الصفحة الرئيسية", 'main')],
+  ]),
+  exercises: Markup.inlineKeyboard([
+    [Markup.button.callback("🎀 طفولة تحتاج علاجًا", 'exercise_childhood')],
+    [Markup.button.callback("💞 جراح العلاقات", 'exercise_relationships')],
+    [Markup.button.callback("⚔️ معارك داخلية", 'exercise_war')],
+    [Markup.button.callback("⬅️ العودة إلى القائمة الرئيسية", 'main')]
+  ])
 };
 
-const exercises = {
-  exercise_childhood: `🎀 ** تمرين الطفولة **\n🕊️ تخيّلي طفلتكِ...`,
-  exercise_relationships: `💞 ** تمرين العلاقات **\n💔 ما الذي ترينه في مرآة الحب؟`,
-  exercise_war: `⚔️ ** تمرين الحرب الداخلية **\n🏚️ اكتبي كل معاركك...`
+const EXERCISE_INSTRUCTIONS = {
+  exercise_childhood: `🎀 ** تمرين الطفولة ** \n\n🕊️ تخيّلي طفلتكِ ذات السبع سنوات…\n- شيء تتمنين أن يُقال لكِ\n- شيء تريدين مسامحتها عليه\n- كلمة تشجيع واحدة... **من قلبكِ لقلبها**`,
+  exercise_relationships: `💞 ** تمرين العلاقات **\n\n💔 ما الذي ترينه في مرآة الحب؟\nاكتبي انعكاسًا واحدًا ترغبين في تغييره… ليس فيهم، بل فيكِ.`,
+  exercise_war: `⚔️ ** تمرين الحرب الداخلية **\n\n🏚️ اكتبي كل معاركك… ثم مزقي الورقة ببطء، كأنكِ تمزّقين الخوف.`
 };
 
-const mainMenu = Markup.inlineKeyboard([
-  [Markup.button.callback('دفترها الأسود', 'black_book')],
-  [Markup.button.callback('اعتراف', 'confess')],
-  [Markup.button.callback('التمارين', 'exercises')],
-  [Markup.button.callback('المكتبة', 'library')]
-]);
+// -------- BOT LOGIC --------
+bot.start((ctx) => {
+  userStates.set(ctx.from.id, STATE.CHOOSING);
+  return ctx.reply(TEXT.welcome, KEYBOARDS.main);
+});
 
-const backToMenu = Markup.inlineKeyboard([
-  [Markup.button.callback('⬅️ العودة إلى القائمة الرئيسية', 'main_menu')]
-]);
+bot.action('main', (ctx) => {
+  userStates.set(ctx.from.id, STATE.CHOOSING);
+  return ctx.editMessageText(TEXT.welcome, KEYBOARDS.main);
+});
 
-const postConfessionKeyboard = Markup.inlineKeyboard([
-  [Markup.button.callback('نعم، أرغب بتمرين', 'yes_exercise')],
-  [Markup.button.callback('لا، أعِدني إلى الصفحة الرئيسية', 'main_menu')]
-]);
-
-const exercisesMenu = Markup.inlineKeyboard([
-  [Markup.button.callback('🎀 طفولة تحتاج علاجًا', 'exercise_childhood')],
-  [Markup.button.callback('💞 جراح العلاقات', 'exercise_relationships')],
-  [Markup.button.callback('⚔️ معارك داخلية', 'exercise_war')],
-  [Markup.button.callback('⬅️ العودة إلى القائمة الرئيسية', 'main_menu')]
-]);
-
-// -------- Handlers --------
-bot.start((ctx) => ctx.reply(texts.welcome, mainMenu));
-
-bot.action('main_menu', (ctx) => ctx.editMessageText(texts.welcome, mainMenu));
-
-bot.action('black_book', (ctx) => ctx.editMessageText(texts.black_book, backToMenu));
+bot.action('black_book', (ctx) => ctx.editMessageText(TEXT.blackBook, KEYBOARDS.back));
 
 bot.action('confess', (ctx) => {
-  ctx.editMessageText(texts.confession_prompt);
-  bot.once('text', async (ctx2) => {
-    const confession = ctx2.message.text;
-    confessions_storage.push(confession);
-    await sendToSheet('اعتراف', confession);
-    await ctx2.reply(texts.after_confession, postConfessionKeyboard);
+  userStates.set(ctx.from.id, STATE.CONFESSION);
+  return ctx.editMessageText(TEXT.confessionPrompt);
+});
+
+bot.action('exercises', (ctx) => {
+  userStates.set(ctx.from.id, STATE.EXERCISE);
+  return ctx.editMessageText(TEXT.exercisesList, KEYBOARDS.exercises);
+});
+
+bot.action('library', (ctx) => ctx.editMessageText(TEXT.library, KEYBOARDS.back));
+
+bot.action(/exercise_.+/, (ctx) => {
+  const id = ctx.callbackQuery.data;
+  return ctx.editMessageText(EXERCISE_INSTRUCTIONS[id], {
+    parse_mode: 'Markdown',
+    ...KEYBOARDS.back
   });
 });
 
-bot.action(['yes_exercise', 'exercises'], (ctx) => {
-  ctx.editMessageText(texts.exercises_intro, exercisesMenu);
+bot.on('text', async (ctx) => {
+  const state = userStates.get(ctx.from.id);
+  const text = ctx.message.text.trim();
+
+  if (state === STATE.CONFESSION) {
+    confessionsStorage.push(text);
+    await sendToSheet("اعتراف", text);
+    userStates.set(ctx.from.id, STATE.CHOOSING);
+    return ctx.reply(TEXT.postConfession, KEYBOARDS.postConfession);
+  }
+
+  if (state === STATE.EXERCISE) {
+    await sendToSheet("تمرين", text);
+    userStates.set(ctx.from.id, STATE.CHOOSING);
+    return ctx.reply(TEXT.exerciseEnd, KEYBOARDS.back);
+  }
 });
 
-bot.action(['exercise_childhood', 'exercise_relationships', 'exercise_war'], (ctx) => {
-  const content = exercises[ctx.match[0]];
-  ctx.editMessageText(content, backToMenu);
-  bot.once('text', async (ctx2) => {
-    const answer = ctx2.message.text;
-    await sendToSheet('تمرين', answer);
-    await ctx2.reply(texts.exercise_end, backToMenu);
-  });
-});
-
-bot.action('library', (ctx) => ctx.editMessageText(texts.library, backToMenu));
-
-// -------- إطلاق البوت --------
-bot.launch();
+// -------- RUN BOT --------
+bot.launch()
+  .then(() => console.log('✅ البوت يعمل الآن...'))
+  .catch(console.error);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-console.log('🤖 البوت قيد التشغيل...');
