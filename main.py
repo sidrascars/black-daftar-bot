@@ -1,32 +1,21 @@
 import os
-from flask import Flask, request
-from telegram import Update
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+print("=== BOT_TOKEN is:", repr(BOT_TOKEN))  # يجب أن تظهر في اللوج
+
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_URL = os.getenv("BOT_URL")
-
-app = Flask(__name__)
+from telegram import Update
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("مرحبًا بك في بلاك دفتر 🖤")
+    await update.message.reply_text("Hello, I am your bot!")
 
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot.application.bot)
-    bot.application.update_queue.put(update)
-    return 'ok'
+def main():
+    if not BOT_TOKEN or BOT_TOKEN == "" or BOT_TOKEN == "None":
+        print("ERROR: BOT_TOKEN environment variable is missing or empty!")
+        exit(1)
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.run_polling()
 
-@app.route('/')
-def home():
-    return 'البوت شغال'
-
-if __name__ == '__main__':
-    app.config['JSON_AS_ASCII'] = False
-    bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    bot.add_handler(CommandHandler('start', start))
-    bot.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get('PORT', 10000)),
-        webhook_url=f"{BOT_URL}/{BOT_TOKEN}"
-    )
+if __name__ == "__main__":
+    main()
