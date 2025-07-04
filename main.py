@@ -1,6 +1,8 @@
 import os
-print("BOT_TOKEN:", os.environ.get("BOT_TOKEN"))
-print("BOT_URL:", os.environ.get("BOT_URL"))import os
+
+print("BOT_URL:", os.environ.get("BOT_URL"))
+print("BOT_URL:", os.environ.get("BOT_URL"))
+import os
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
