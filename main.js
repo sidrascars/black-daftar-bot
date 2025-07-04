@@ -1,20 +1,19 @@
-const { Telegraf } = require('telegraf');
+const express = require("express");
+const { Telegraf } = require("telegraf");
+require("dotenv").config();
 
-// احصل على التوكن من متغير البيئة
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const app = express();
 
-// أمر /start
-bot.start((ctx) => ctx.reply('مرحباً! أنا بوت تيليجرام بلغة Node.js 🚀'));
+bot.start((ctx) => ctx.reply("مرحبًا بكِ في بلاك دفتر!"));
 
-// أمر /help
-bot.help((ctx) => ctx.reply('أرسل أي رسالة وسأرددها لك!'));
+bot.telegram.setWebhook(process.env.BOT_URL + "/bot" + process.env.BOT_TOKEN);
+app.use(bot.webhookCallback("/bot" + process.env.BOT_TOKEN));
 
-// بوت يكرر الرسائل
-bot.on('text', (ctx) => ctx.reply(`قلت: ${ctx.message.text}`));
+app.get("/", (req, res) => {
+  res.send("بوت بلاك دفتر يعمل ✅");
+});
 
-// تشغيل البوت
-bot.launch();
-
-// إغلاق آمن عند إيقاف السيرفر
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Bot server is running");
+});
